@@ -1,0 +1,6 @@
+{
+    "zendesk_email": "example@domain.com",
+    "zendesk_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "zendesk_subdomain": "mycompany",
+    "toggl_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+}
