@@ -10,7 +10,7 @@ A simple script that keeps Toggl projects up to date by pulling the latest Zende
 
 ## How do I use it?
 
-Make a `config.json` file and fill in your details, use `config.json.example` as a reference. Only python 3 is supported, so make sure that's installed. The script can be easily executed using:
+Make a `config.json` file and fill in your details, use `config.json.example` as a reference. Only python 3 is supported, so make sure that's installed. The script depends on the `fuzzywuzzy` and `zenpy` packages which can be easily installed using `pip`. The main script can be easily executed using:
 
 ```
 python main.py
