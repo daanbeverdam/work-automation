@@ -90,6 +90,7 @@ class EasyLife():
         return clients
 
     def log(self, entry):
+        entry = entry.strip()
         print(entry)
         with open('system.log', 'a') as log:
             log.write(str(datetime.datetime.now()) + ' ' + entry + '\n')
