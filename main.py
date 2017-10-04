@@ -1,7 +1,6 @@
 from zenpy import Zenpy
 import datetime
 import requests
-import sqlite3
 from fuzzywuzzy import process
 import json
 import traceback
