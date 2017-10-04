@@ -17,5 +17,3 @@ python main.py
 ```
 
 💡 Pro-tip: make it a cron job! I advise every 5 minutes or so, but be sure to fire it up at least once a day.
-
-- 
