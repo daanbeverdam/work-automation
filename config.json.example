@@ -2,5 +2,7 @@
     "zendesk_email": "example@domain.com",
     "zendesk_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
     "zendesk_subdomain": "mycompany",
-    "toggl_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "toggl_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "freshbooks_token": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "freshbooks_subdomain": "mycompany"
 }
