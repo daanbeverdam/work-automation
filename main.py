@@ -24,6 +24,7 @@ class EasyLife():
             'subdomain': config.get('freshbooks_subdomain')
         }
         self.toggl_clients = self.get_toggl_clients()
+        self.fb_projects = []
 
     def sync(self):
         try:
@@ -105,7 +106,12 @@ class EasyLife():
         response = requests.get(url, auth=self.toggl_creds)
         return response.json()['data'].get('cid')
 
-    def create_fb_time_entries(self):
+    def get_toggl_project(self, project_id):
+        url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
+        response = requests.get(url, auth=self.toggl_creds)
+        return response.json()['data']
+
+    def get_no_of_days_interactive(self):
         answer = input("Press return to start adding time entries of past day or type number of days you want to go back. ")
         if answer == '':
             days = 1
@@ -115,60 +121,115 @@ class EasyLife():
             except:
                 print("You didn't enter a number, assuming 1 day.")
                 days = 1
+        return days
+
+    def create_fb_time_entries(self):
+        days = self.get_no_of_days_interactive()
         time_entries = self.get_toggl_time_entries(days)
         print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
+        self.fb_projects = self.get_fb_projects()
         for entry in time_entries:
             print("========================================")
             client_id = self.get_toggl_client_id(project_id=entry.get('pid'))
             client_name = self.get_toggle_client(client_id)
-            duration = int(entry['duration']) / 60 / 60  # duration in hours
-            print("Toggl client: " + client_name)
-            print("Toggl description: " + str(entry.get('description')))
+            project = self.get_toggl_project(entry.get('pid'))
+            duration = int(entry['duration']) / 60 / 60
+            duration = round((duration*4)/4)
+            description = "Description: %s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
+            date = entry['start']
+            print(description)
+            print("Date: " + date)
             print("Hours spent: " + str(duration))
             if entry['billable']:
-                answer = input("Do you want to enter this in Freshbooks? (Y/n) ")
+                project_id = self.get_fb_project_id(client_name)
+                answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
                 if answer.lower() == "y" or answer == "":
-                    self.add_fb_entry(client_name, duration, str(entry.get('description')))
-                    print("\u2713 Entry added to Fresbooks.")
+                    self.add_fb_entry(project_id, duration, description, date)
+                    print("\u2713 Entry added to Freshbooks.")
                 else:
                     print("\u2573 Did not add entry to Freshbooks.")
             else:
                 print("\u2573 Skipping this entry because it is not billable.")
+        print("All done!")
 
-    def add_fb_entry(self, client_name, duration, description):
-        # Can you tell i hate XML?
+    def get_fb_project_id(self, name):
+        if name:
+            choices = self.fb_projects.keys()
+            results = process.extract(name, choices)
+            best_match = results[0][0]
+            if results[0][1] == results[1][1] or results[0][1] < 50:
+                print("Couldn't find a project that exactly matches '%s' in Freshbooks. Best matches:" % (name))
+                for result in results[:5]:
+                    print(" %s" % (result[0]))
+                answer = input("Please specify a less ambiguous query: ")
+                self.clear_lines(7)
+                return self.get_fb_project_id(answer)
+            print("Matched '%s' to Freshbooks project '%s'" % (name, best_match))
+            answer = input("Is that correct? (Y/n) ")
+            self.clear_lines(2)
+            if answer.lower() == 'y' or answer == '':
+                print("Project: " + best_match)
+                return self.fb_projects[best_match]
+            else:
+                return self.get_fb_project_id(None)
+        else:
+            answer = input("Search for a Freshbooks project: ")
+            self.clear_lines(1)
+            return self.get_fb_project_id(answer)
+
+    def clear_lines(self, no_of_lines):
+        CURSOR_UP_ONE = '\x1b[1A'
+        ERASE_LINE = '\x1b[2K'
+        print((CURSOR_UP_ONE + ERASE_LINE) * no_of_lines + CURSOR_UP_ONE)
+
+    def add_fb_entry(self, project_id, duration, description, date):
         xml_request = """
         <?xml version="1.0" encoding="utf-8"?>
         <request method="time_entry.create">
           <time_entry>
-            <project_id>1</project_id>        <!-- (Required) -->
-            <task_id>1</task_id>              <!-- (Required) -->
-            <staff_id>1</staff_id>            <!-- (Optional) -->
-            <hours>4.5</hours>                <!-- (Optional) -->
-            <notes>Phone consultation</notes> <!-- (Optional) -->
-            <date>2007-01-01</date>           <!-- (Optional) -->
+            <project_id>%s</project_id>
+            <task_id>1</task_id>
+            <hours>%s</hours>
+            <notes>%s</notes>
+            <date>%s</date>
           </time_entry>
         </request>
-        """
-
-    def get_fb_projects(self):
-        xml_request = """
-        <?xml version="1.0" encoding="utf-8"?>
-        <request method="project.list">
-          <page>1</page>
-          <per_page>999999</per_page>
-        </request>
-        """
+        """ % (str(project_id), str(duration), description, date)
         url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
         response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
-        xmldoc = minidom.parseString(response.text)
-        projects = xmldoc.getElementsByTagName('project')
+        self.log(response.text)
+
+    def get_fb_projects(self):
+        # Can you tell I hate XML?
+        print("Getting Freshbooks projects from their shitty XML API...")
+        result = {}
+        projects = ['project']
+        i = 1
+        while len(projects) != 0:
+            xml_request = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <request method="project.list">
+              <page>%i</page>
+              <per_page>100</per_page>
+            </request>
+            """ % (i)
+            i += 1
+            url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
+            response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
+            xmldoc = minidom.parseString(response.text)
+            projects = xmldoc.getElementsByTagName('project')
+            if len(projects):
+                for project in projects:
+                    name = project.getElementsByTagName("name")[0].firstChild.nodeValue
+                    project_id = project.getElementsByTagName("project_id")[0].firstChild.nodeValue
+                    result[name] = project_id
+        return result
 
     def get_toggl_time_entries(self, days=1):
         timezone_shift = '+02:00'  # TODO: make this dynamic
         yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=days)
         params = {'start_date': yesterday.isoformat() + timezone_shift}
-        response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=(self.fb_creds['token'], 'api_token'))
+        response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=self.toggl_creds)
         time_entries = response.json()
         return time_entries
 
@@ -181,5 +242,5 @@ class EasyLife():
 if __name__ == '__main__':
     el = EasyLife()
     # el.sync()
-    # el.create_fb_time_entries()
+    el.create_fb_time_entries()
     el.get_fb_projects()
