@@ -134,7 +134,7 @@ class EasyLife():
             client_name = self.get_toggle_client(client_id)
             project = self.get_toggl_project(entry.get('pid'))
             duration = int(entry['duration']) / 60 / 60
-            duration = round((duration*4)/4)
+            duration = round(duration * 4 ) / 4  # convert to fb hours
             description = "Description: %s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
             date = entry['start']
             print(description)
@@ -188,7 +188,7 @@ class EasyLife():
         <request method="time_entry.create">
           <time_entry>
             <project_id>%s</project_id>
-            <task_id>1</task_id>
+            <task_id>4</task_id>
             <hours>%s</hours>
             <notes>%s</notes>
             <date>%s</date>
@@ -197,7 +197,7 @@ class EasyLife():
         """ % (str(project_id), str(duration), description, date)
         url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
         response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
-        self.log(response.text)
+        self.log(response.text, silent=True)
 
     def get_fb_projects(self):
         # Can you tell I hate XML?
@@ -233,9 +233,10 @@ class EasyLife():
         time_entries = response.json()
         return time_entries
 
-    def log(self, entry):
+    def log(self, entry, silent=False):
         entry = entry.strip()
-        print(entry)
+        if not silent:
+            print(entry)
         with open('system.log', 'a') as log:
             log.write(str(datetime.datetime.now()) + ' ' + entry + '\n')
 
