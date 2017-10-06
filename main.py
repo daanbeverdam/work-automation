@@ -12,12 +12,12 @@ class EasyLife():
     def __init__(self):
         config = json.load(open('config.json','r'))
         self.zen_creds = {
-            'email' : config['zendesk_email'],
-            'token' : config['zendesk_token'],
-            'subdomain': config['zendesk_subdomain']
+            'email' : config.get('zendesk_email'),
+            'token' : config.get('zendesk_token'),
+            'subdomain': config.get('zendesk_subdomain')
             }
         self.toggl_creds = (
-            config['toggl_token'], 'api_token'
+            config.get('toggl_token'), 'api_token'
             )
         self.fb_creds = {
             'token': config.get('freshbooks_token'),
@@ -127,6 +127,7 @@ class EasyLife():
         days = self.get_no_of_days_interactive()
         time_entries = self.get_toggl_time_entries(days)
         print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
+        print("Tip: when in Freshbooks project search mode, you can always enter 'skip' to skip the entry.")
         self.fb_projects = self.get_fb_projects()
         for entry in time_entries:
             print("========================================")
@@ -134,13 +135,17 @@ class EasyLife():
             client_name = self.get_toggle_client(client_id)
             project = self.get_toggl_project(entry.get('pid'))
             duration = int(entry['duration']) / 60 / 60
-            duration = round(duration * 4 ) / 4  # convert to fb hours
+            duration = round(duration * 4 ) / 4  # convert to fb hours format
             description = "Description: %s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
             date = entry['start']
             print(description)
             print("Date: " + date)
             print("Hours spent: " + str(duration))
             if entry['billable']:
+                client_name = self.fb_project_search(client_name)
+                if not client_name:
+                    print("\u2573 Skipping this entry.")
+                    continue
                 project_id = self.get_fb_project_id(client_name)
                 answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
                 if answer.lower() == "y" or answer == "":
@@ -153,29 +158,34 @@ class EasyLife():
         print("All done!")
 
     def get_fb_project_id(self, name):
-        if name:
+        return self.fb_projects[name]
+
+    def fb_project_search(self, name):
+        if name == 'skip' or name == 'cancel':
+            return None
+        elif name:
             choices = self.fb_projects.keys()
             results = process.extract(name, choices)
             best_match = results[0][0]
             if results[0][1] == results[1][1] or results[0][1] < 50:
                 print("Couldn't find a project that exactly matches '%s' in Freshbooks. Best matches:" % (name))
                 for result in results[:5]:
-                    print(" %s" % (result[0]))
+                    print("   %s" % (result[0]))
                 answer = input("Please specify a less ambiguous query: ")
                 self.clear_lines(7)
-                return self.get_fb_project_id(answer)
+                return self.fb_project_search(answer)
             print("Matched '%s' to Freshbooks project '%s'" % (name, best_match))
             answer = input("Is that correct? (Y/n) ")
             self.clear_lines(2)
             if answer.lower() == 'y' or answer == '':
                 print("Project: " + best_match)
-                return self.fb_projects[best_match]
+                return best_match
             else:
-                return self.get_fb_project_id(None)
+                return self.fb_project_search(None)
         else:
             answer = input("Search for a Freshbooks project: ")
             self.clear_lines(1)
-            return self.get_fb_project_id(answer)
+            return self.fb_project_search(answer)
 
     def clear_lines(self, no_of_lines):
         CURSOR_UP_ONE = '\x1b[1A'
@@ -244,4 +254,3 @@ if __name__ == '__main__':
     el = EasyLife()
     # el.sync()
     el.create_fb_time_entries()
-    el.get_fb_projects()
