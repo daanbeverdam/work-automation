@@ -22,7 +22,7 @@ class EasyLife():
         self.fb_creds = {
             'token': config.get('freshbooks_token'),
             'subdomain': config.get('freshbooks_subdomain')
-        }
+            }
         self.toggl_clients = self.get_toggl_clients()
         self.fb_projects = []
 
@@ -249,8 +249,3 @@ class EasyLife():
             print(entry)
         with open('system.log', 'a') as log:
             log.write(str(datetime.datetime.now()) + ' ' + entry + '\n')
-
-if __name__ == '__main__':
-    el = EasyLife()
-    # el.sync()
-    el.create_fb_time_entries()
