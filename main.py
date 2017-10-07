@@ -26,34 +26,41 @@ class EasyLife():
         self.toggl_clients = self.get_toggl_clients()
         self.fb_projects = []
 
-    def sync(self):
+    def sync(self, no_of_days):
         try:
-            tickets = self.get_zd_tickets(1)
+            tickets = self.get_zd_tickets(no_of_days)
             for ticket in tickets:
+                self.log("============================")
                 project_title = self.format_title(ticket.id, ticket.subject)
                 if ticket.organization:
-                    client_id = self.get_toggl_client_id(ticket.organization.name)
-                    self.log("Creating project '%s'. Associated client: '%s'." % (project_title, ticket.organization.name))
+                    client_id = self.get_toggl_client_id(name=ticket.organization.name)
+                    self.log("Creating project '%s'." % (project_title))
                     result = self.create_toggl_project(project_title, client_id)
+                    print("Toggl response:")
                     self.log(result)
                 else:
                     self.log("Ticket '%s' has no associated organization!" % (project_title))
         except:
             self.log(traceback.format_exc())
 
-    def get_toggl_client_id(self, name):
-        name = name.lower()
-        if self.toggl_clients.get(name):
-            return self.toggl_clients[name]
-        else:
-            # Fuzzy string matching ahead, beware!
-            choices = self.toggl_clients.keys()
-            results = process.extract(name, choices)
-            best_match = results[0][0]
-            self.log("Fuzzy matched %s (Zendesk) to %s (Toggl)." % (name, best_match))
-            if len(results) > 4:
-                self.log("Other matches: " + str(results[:5]))
-            return self.toggl_clients[best_match]
+    def get_toggl_client_id(self, name=None, project_id=None):
+        if project_id:
+            url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
+            response = requests.get(url, auth=self.toggl_creds)
+            return response.json()['data'].get('cid')
+        elif name:
+            name = name.lower()
+            if self.toggl_clients.get(name):
+                return self.toggl_clients[name]
+            else:
+                # Fuzzy string matching ahead, beware!
+                choices = self.toggl_clients.keys()
+                results = process.extract(name, choices)
+                best_match = results[0][0]
+                self.log("Fuzzy matched %s (Zendesk) to %s (Toggl)." % (name, best_match))
+                if len(results) > 4:
+                    self.log("Other matches: " + str(results[:5]))
+                return self.toggl_clients[best_match]
 
     def format_title(self, _id, subject):
         # TODO: strip block tags?
@@ -100,11 +107,6 @@ class EasyLife():
             if _id == client_id:
                 return name
         return None
-
-    def get_toggl_client_id(self, project_id):
-        url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
-        response = requests.get(url, auth=self.toggl_creds)
-        return response.json()['data'].get('cid')
 
     def get_toggl_project(self, project_id):
         url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
