@@ -62,11 +62,11 @@ class EasyLife():
 
     def fuzzy_match(self, query, choices):
         """Returns best approximate match in a list of strings."""
-        results = process.extract(name, choices)
+        results = process.extract(query, choices)
         if results[0][1] == results[1][1]:
             # Use token set ratio on best results as a tie breaker
             best_results = [r[0] for r in results[:15]]
-            results = process.extract(name, best_results, scorer=fuzz.token_set_ratio)
+            results = process.extract(query, best_results, scorer=fuzz.token_set_ratio)
         best_match = results[0][0]
         return best_match
 
