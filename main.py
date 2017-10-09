@@ -139,9 +139,9 @@ class EasyLife():
             project = self.get_toggl_project(entry.get('pid'))
             duration = int(entry['duration']) / 60 / 60
             duration = round(duration * 4 ) / 4  # convert to fb hours format
-            description = "Description: %s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
+            description = "%s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
             date = entry['start']
-            print(description)
+            print("Description: " + description)
             print("Date: " + date)
             print("Hours spent: " + str(duration))
             if entry['billable']:
