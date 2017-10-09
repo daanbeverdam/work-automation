@@ -1,7 +1,7 @@
 from zenpy import Zenpy
 import datetime
 import requests
-from fuzzywuzzy import process
+from fuzzywuzzy import process, fuzz
 import json
 import traceback
 from xml.dom import minidom
@@ -56,12 +56,19 @@ class EasyLife():
             else:
                 # Fuzzy string matching ahead, beware!
                 choices = self.toggl_clients.keys()
-                results = process.extract(name, choices)
-                best_match = results[0][0]
+                best_match = self.fuzzy_match(name, choices)
                 self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
-                if len(results) > 4:
-                    self.log("Other matches: " + str(results[:5]))
                 return self.toggl_clients[best_match]
+
+    def fuzzy_match(self, query, choices):
+        """Returns best approximate match in a list of strings."""
+        results = process.extract(name, choices)
+        if results[0][1] == results[1][1]:
+            # Use token set ratio on best results as a tie breaker
+            best_results = [r[0] for r in results[:15]]
+            results = process.extract(name, best_results, scorer=fuzz.token_set_ratio)
+        best_match = results[0][0]
+        return best_match
 
     def format_title(self, _id, subject):
         # TODO: strip block tags?
@@ -147,7 +154,7 @@ class EasyLife():
             if entry['billable']:
                 client_name = self.fb_project_search(client_name)
                 if not client_name:
-                    print("\u2573 Skipping this entry.")
+                    print("\u2718 Skipping this entry.")
                     continue
                 project_id = self.get_fb_project_id(client_name)
                 answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
@@ -155,9 +162,9 @@ class EasyLife():
                     self.add_fb_entry(project_id, duration, description, date)
                     print("\u2713 Entry added to Freshbooks.")
                 else:
-                    print("\u2573 Did not add entry to Freshbooks.")
+                    print("\u2718 Did not add entry to Freshbooks.")
             else:
-                print("\u2573 Skipping this entry because it is not billable.")
+                print("\u2718 Skipping this entry because it is not billable.")
         print("All done!")
 
     def get_fb_project_id(self, name):
@@ -168,16 +175,20 @@ class EasyLife():
             return None
         elif name:
             choices = self.fb_projects.keys()
-            results = process.extract(name, choices)
+            results = process.extract(name, choices, limit=10)
             best_match = results[0][0]
             if results[0][1] == results[1][1] or results[0][1] < 50:
-                print("Couldn't find a project that exactly matches '%s' in Freshbooks. Best matches:" % (name))
-                for result in results[:5]:
-                    print("   %s" % (result[0]))
-                answer = input("Please specify a less ambiguous query: ")
-                self.clear_lines(7)
+                print("Couldn't find a Freshbooks project that exactly matches '%s'. Best matches:" % (name))
+                i = 0
+                for result in results:
+                    i += 1
+                    print(" [%i] %s" % (i, result[0]))
+                answer = input("Choose one or specify a less ambiguous query: ")
+                self.clear_lines(2 + len(results))
+                if answer.isdigit() and int(answer) <= len(results):
+                    answer = results[int(answer) - 1][0]
                 return self.fb_project_search(answer)
-            print("Matched '%s' to Freshbooks project '%s'" % (name, best_match))
+            print("Matched query to Freshbooks project '%s'." % (best_match))
             answer = input("Is that correct? (Y/n) ")
             self.clear_lines(2)
             if answer.lower() == 'y' or answer == '':
@@ -195,19 +206,19 @@ class EasyLife():
         ERASE_LINE = '\x1b[2K'
         print((CURSOR_UP_ONE + ERASE_LINE) * no_of_lines + CURSOR_UP_ONE)
 
-    def add_fb_entry(self, project_id, duration, description, date):
+    def add_fb_entry(self, project_id, duration, description, date, task_id=2):
         xml_request = """
         <?xml version="1.0" encoding="utf-8"?>
         <request method="time_entry.create">
           <time_entry>
             <project_id>%s</project_id>
-            <task_id>4</task_id>
+            <task_id>%s</task_id>
             <hours>%s</hours>
             <notes>%s</notes>
             <date>%s</date>
           </time_entry>
         </request>
-        """ % (str(project_id), str(duration), description, date)
+        """ % (str(project_id), str(task_id), str(duration), description, date)
         url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
         response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
         self.log(response.text, silent=True)
