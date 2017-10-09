@@ -21,10 +21,10 @@ pip install zenpy
 To automatically create Toggle projects from the latest Zendesk tickets, use:
 
 ```
-python sync-zendesk-toggle.py
+python sync-zendesk-toggle.py #[number of days]
 ```
 
-💡 Pro-tip: make it a cron job! I advise every 5 minutes or so, but be sure to fire it up at least once a day.
+Optionally, you can specify how many days you want to go back in time. 💡 Pro-tip: make it a cron job!
 
 ### CLI for FreshBooks time tracking
 
