@@ -34,12 +34,13 @@ class EasyLife():
                 project_title = self.format_title(ticket.id, ticket.subject)
                 if ticket.organization:
                     client_id = self.get_toggl_client_id(name=ticket.organization.name)
-                    self.log("Creating project '%s'." % (project_title))
-                    result = self.create_toggl_project(project_title, client_id)
-                    print("Toggl response:")
-                    self.log(result)
                 else:
-                    self.log("Ticket '%s' has no associated organization!" % (project_title))
+                    self.log("Ticket '%s' has no associated organization in Zendesk! Creating Toggl project anyway." % (project_title))
+                    client_id = False
+                self.log("Creating project '%s'." % (project_title))
+                result = self.create_toggl_project(project_title, client_id)
+                print("Toggl response:")
+                self.log(result)
         except:
             self.log(traceback.format_exc())
 
@@ -57,7 +58,7 @@ class EasyLife():
                 choices = self.toggl_clients.keys()
                 results = process.extract(name, choices)
                 best_match = results[0][0]
-                self.log("Fuzzy matched %s (Zendesk) to %s (Toggl)." % (name, best_match))
+                self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
                 if len(results) > 4:
                     self.log("Other matches: " + str(results[:5]))
                 return self.toggl_clients[best_match]
