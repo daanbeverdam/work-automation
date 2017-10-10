@@ -1,5 +1,6 @@
 from zenpy import Zenpy
 import datetime
+from dateutil import tz, parser
 import requests
 from fuzzywuzzy import process, fuzz
 import json
@@ -133,9 +134,25 @@ class EasyLife():
                 days = 1
         return days
 
+    def merge_toggl_time_entries(self, time_entries):
+        d = {}
+        for entry in time_entries:
+            date = parser.parse(entry['start']).date()
+            unique_id = str(entry['pid']) + str(date)
+            if d.get(unique_id):
+                d[unique_id]['duration'] += entry['duration']
+                if d[unique_id].get('description'):
+                    d[unique_id]['description'] += ' / ' + entry['description']
+                else:
+                    d[unique_id]['description'] = entry['description']
+            else:
+                d[unique_id] = entry
+        return d.values()
+
     def create_fb_time_entries(self):
         days = self.get_no_of_days_interactive()
         time_entries = self.get_toggl_time_entries(days)
+        time_entries = self.merge_toggl_time_entries(time_entries)
         print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
         print("Tip: when in Freshbooks project search mode, you can always enter 'skip' to skip the entry.")
         self.fb_projects = self.get_fb_projects()
@@ -146,7 +163,7 @@ class EasyLife():
             project = self.get_toggl_project(entry.get('pid'))
             duration = int(entry['duration']) / 60 / 60
             duration = round(duration * 4 ) / 4  # convert to fb hours format
-            description = "%s %s" %(project['name'], '/ ' + entry['description'] if entry.get('description') else '')
+            description = "%s %s" % (project['name'], '/ ' + entry['description'] if entry.get('description') else '')
             date = entry['start']
             print("Description: " + description)
             print("Date: " + date)
@@ -250,12 +267,18 @@ class EasyLife():
         return result
 
     def get_toggl_time_entries(self, days=1):
-        timezone_shift = '+02:00'  # TODO: make this dynamic
-        yesterday = datetime.datetime.utcnow() - datetime.timedelta(days=days)
-        params = {'start_date': yesterday.isoformat() + timezone_shift}
+        start = self.get_timestamp(days)
+        params = {'start_date': start}
         response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=self.toggl_creds)
         time_entries = response.json()
         return time_entries
+
+    def get_timestamp(self, days=1):
+        """Returns isoformat string of beginning of past x day(s)."""
+        offset = datetime.datetime.utcnow().date() - datetime.timedelta(days=days-1)
+        est = tz.gettz('Europe/Amsterdam')
+        start = datetime.datetime(offset.year, offset.month, offset.day).astimezone(est)
+        return start.isoformat()
 
     def log(self, entry, silent=False):
         entry = entry.strip()
