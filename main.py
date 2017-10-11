@@ -139,10 +139,13 @@ class EasyLife():
         for entry in time_entries:
             date = parser.parse(entry['start']).date()
             unique_id = str(entry['pid']) + str(date)
+            if not entry.get('description'):
+                entry['description'] = ""
             if d.get(unique_id):
                 d[unique_id]['duration'] += entry['duration']
                 if d[unique_id].get('description'):
-                    d[unique_id]['description'] += ' / ' + entry['description']
+                    if entry['description'].strip() not in d[unique_id]['description']:
+                        d[unique_id]['description'] += ' / ' + entry['description']
                 else:
                     d[unique_id]['description'] = entry['description']
             else:
@@ -164,7 +167,7 @@ class EasyLife():
             duration = int(entry['duration']) / 60 / 60
             duration = round(duration * 4 ) / 4  # convert to fb hours format
             description = "%s %s" % (project['name'], '/ ' + entry['description'] if entry.get('description') else '')
-            date = entry['start']
+            date = str(parser.parse(entry['start']).date())
             print("Description: " + description)
             print("Date: " + date)
             print("Hours spent: " + str(duration))
