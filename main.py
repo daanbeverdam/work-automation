@@ -279,9 +279,11 @@ class EasyLife():
     def get_timestamp(self, days=1):
         """Returns isoformat string of beginning of past x day(s)."""
         offset = datetime.datetime.utcnow().date() - datetime.timedelta(days=days-1)
-        est = tz.gettz('Europe/Amsterdam')
-        start = datetime.datetime(offset.year, offset.month, offset.day).astimezone(est)
-        return start.isoformat()
+        # est = tz.gettz('Europe/Amsterdam')
+        # temporary dirty fix for timezone:
+        timezone = '+02:00'
+        start = datetime.datetime(offset.year, offset.month, offset.day)
+        return start.isoformat() + timezone
 
     def log(self, entry, silent=False):
         entry = entry.strip()
