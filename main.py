@@ -11,7 +11,8 @@ from xml.dom import minidom
 class EasyLife():
 
     def __init__(self):
-        config = json.load(open('config.json','r'))
+        self.BOOKED_TAG = "\U0001F343"
+        config = json.load(open('config.json', 'r'))
         self.zen_creds = {
             'email' : config.get('zendesk_email'),
             'token' : config.get('zendesk_token'),
@@ -145,19 +146,21 @@ class EasyLife():
                 entry['description'] = ""
             if d.get(unique_id):
                 d[unique_id]['duration'] += entry['duration']
+                d[unique_id]['merged_ids'].append(entry['id'])
                 if d[unique_id].get('description'):
                     if entry['description'].strip() not in d[unique_id]['description']:
                         d[unique_id]['description'] += ' / ' + entry['description']
                 else:
                     d[unique_id]['description'] = entry['description']
             else:
+                entry['merged_ids'] = [entry['id']]
                 d[unique_id] = entry
         return d.values()
 
     def create_fb_time_entries(self):
         days = self.get_no_of_days_interactive()
-        time_entries = self.get_toggl_time_entries(days)
-        time_entries = self.merge_toggl_time_entries(time_entries)
+        original_entries = self.get_toggl_time_entries(days)
+        time_entries = self.merge_toggl_time_entries(original_entries)
         print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
         print("Tip: when in Freshbooks project search mode, you can always enter 'skip' to skip the entry.")
         self.fb_projects = self.get_fb_projects()
@@ -173,7 +176,9 @@ class EasyLife():
             print("Description: " + description)
             print("Date: " + date)
             print("Hours spent: " + str(duration))
-            if entry['billable']:
+            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
+                print("\u2718 Skipping this entry because it is already in Freshbooks.")
+            elif entry['billable']:
                 client_name = self.fb_project_search(client_name)
                 if not client_name:
                     print("\u2718 Skipping this entry.")
@@ -182,12 +187,29 @@ class EasyLife():
                 answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
                 if answer.lower() == "y" or answer == "":
                     self.add_fb_entry(project_id, duration, description, date)
+                    self.tag_toggl_projects(entry['merged_ids'], self.BOOKED_TAG)
                     print("\u2713 Entry added to Freshbooks.")
                 else:
                     print("\u2718 Did not add entry to Freshbooks.")
             else:
                 print("\u2718 Skipping this entry because it is not billable.")
         print("All done!")
+
+    def tag_toggl_projects(self, id_list, tag):
+        """Tags Toggl time entries. Accepts list of toggl time entry IDs and tag."""
+        headers = {
+            'Content-Type': 'application/json',
+            }
+        data = {
+            "time_entry": {
+                "tags": [tag]
+                }
+            }
+        data = json.dumps(data)
+        url = 'https://www.toggl.com/api/v8/time_entries/' + ','.join(str(i) for i in id_list)
+        response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
+        print('Tagged Toggl %s. ' % ('entry' if len(id_list) == 1 else 'entries') + self.BOOKED_TAG)
+        return response.json()
 
     def get_fb_project_id(self, name):
         return self.fb_projects[name]
