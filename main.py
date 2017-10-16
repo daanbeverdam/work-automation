@@ -11,6 +11,7 @@ from xml.dom import minidom
 class EasyLife():
 
     def __init__(self):
+        self.print_splash()
         self.BOOKED_TAG = "\U0001F343"
         config = json.load(open('config.json', 'r'))
         self.zen_creds = {
@@ -103,6 +104,7 @@ class EasyLife():
 
     def get_toggl_clients(self):
         """Returns Toggl clients."""
+        print("Loading Toggl clients...")
         url = 'https://www.toggl.com/api/v8/clients'
         response = requests.get(url, auth=self.toggl_creds).json()
         clients = {}
@@ -123,7 +125,7 @@ class EasyLife():
         return response.json()['data']
 
     def get_no_of_days_interactive(self):
-        answer = input("Press return to start adding time entries of past day or type number of days you want to go back. ")
+        answer = input("Press return to get entries of past day or input number of days to go back in time: ")
         if answer == '':
             days = 1
         else:
@@ -137,11 +139,15 @@ class EasyLife():
     def merge_toggl_time_entries(self, time_entries):
         d = {}
         for entry in time_entries:
+            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
+                status = 'booked'
+            else:
+                status = 'not-booked'
             date = parser.parse(entry['start']).date()
             if not entry.get('pid'):
                 self.log("Couldn't find associated project for entry: %s" % (str(entry)))
                 continue
-            unique_id = str(entry['pid']) + str(date)
+            unique_id = str(entry['pid']) + str(date) + status
             if not entry.get('description'):
                 entry['description'] = ""
             if d.get(unique_id):
@@ -157,15 +163,46 @@ class EasyLife():
                 d[unique_id] = entry
         return d.values()
 
+    def print(self, string, format=None):
+        HEADER = '\033[95m'
+        OKBLUE = '\033[94m'
+        OKGREEN = '\033[92m'
+        WARNING = '\033[93m'
+        FAIL = '\033[91m'
+        ENDC = '\033[0m'
+        BOLD = '\033[1m'
+        UNDERLINE = '\033[4m'
+        if format == 'tip':
+            string = WARNING + BOLD + 'Tip: ' + string
+        elif format == 'bold':
+            string = BOLD + string
+        elif format == 'cross':
+            string = FAIL + '\u2718 ' + string
+        elif format == 'ok':
+            string = OKGREEN + '\u2713 ' + string
+        print(string + ENDC)
+
+    def print_splash(self):
+        splash = r"""
+     ___T_     WorkAutomation!
+    | o o |   /
+    |__-__|
+    /| []|\
+  ()/|___|\()
+     |_|_|
+     /_|_\
+        """
+        print(splash)
+
     def create_fb_time_entries(self):
+        self.fb_projects = self.get_fb_projects()
+        self.print("You can always enter 'skip' when you want to skip a time entry.", format='tip')
         days = self.get_no_of_days_interactive()
         original_entries = self.get_toggl_time_entries(days)
         time_entries = self.merge_toggl_time_entries(original_entries)
-        print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
-        print("Tip: when in Freshbooks project search mode, you can always enter 'skip' to skip the entry.")
-        self.fb_projects = self.get_fb_projects()
+        self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
         for entry in time_entries:
-            print("========================================")
+            self.print_divider(30)
             client_id = self.get_toggl_client_id(project_id=entry.get('pid'))
             client_name = self.get_toggle_client(client_id)
             project = self.get_toggl_project(entry.get('pid'))
@@ -173,27 +210,30 @@ class EasyLife():
             duration = round(duration * 4 ) / 4  # convert to fb hours format
             description = "%s %s" % (project['name'], '/ ' + entry['description'] if entry.get('description') else '')
             date = str(parser.parse(entry['start']).date())
-            print("Description: " + description)
-            print("Date: " + date)
-            print("Hours spent: " + str(duration))
+            self.print("Description: " + description)
+            self.print("Date: " + date)
+            self.print("Hours spent: " + str(duration))
             if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
-                print("\u2718 Skipping this entry because it is already in Freshbooks.")
+                self.print("Skipping this entry because it is already in Freshbooks.", 'cross')
             elif entry['billable']:
                 client_name = self.fb_project_search(client_name)
                 if not client_name:
-                    print("\u2718 Skipping this entry.")
+                    self.print("Skipping this entry.", 'cross')
                     continue
                 project_id = self.get_fb_project_id(client_name)
                 answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
                 if answer.lower() == "y" or answer == "":
-                    self.add_fb_entry(project_id, duration, description, date)
                     self.tag_toggl_projects(entry['merged_ids'], self.BOOKED_TAG)
-                    print("\u2713 Entry added to Freshbooks.")
+                    self.add_fb_entry(project_id, duration, description, date)
                 else:
-                    print("\u2718 Did not add entry to Freshbooks.")
+                    self.print("Did not add entry to Freshbooks.", 'cross')
             else:
-                print("\u2718 Skipping this entry because it is not billable.")
-        print("All done!")
+                self.print("Skipping this entry because it is not billable.", 'cross')
+        self.print_divider(30)
+        self.print("All done!")
+
+    def print_divider(self, length):
+        print("=" * length)
 
     def tag_toggl_projects(self, id_list, tag):
         """Tags Toggl time entries. Accepts list of toggl time entry IDs and tag."""
@@ -208,7 +248,7 @@ class EasyLife():
         data = json.dumps(data)
         url = 'https://www.toggl.com/api/v8/time_entries/' + ','.join(str(i) for i in id_list)
         response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
-        print('Tagged Toggl %s. ' % ('entry' if len(id_list) == 1 else 'entries') + self.BOOKED_TAG)
+        self.print('Tagged Toggl %s. ' % ('entry' if len(id_list) == 1 else 'entries') + self.BOOKED_TAG, 'ok')
         return response.json()
 
     def get_fb_project_id(self, name):
@@ -265,11 +305,12 @@ class EasyLife():
         """ % (str(project_id), str(task_id), str(duration), description, date)
         url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
         response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
+        self.print("Entry added to Freshbooks.", 'ok')
         self.log(response.text, silent=True)
 
     def get_fb_projects(self):
         # Can you tell I hate XML?
-        print("Getting Freshbooks projects from their shitty XML API...")
+        print("Loading Freshbooks projects from their shitty XML API...")
         result = {}
         projects = ['project']
         i = 1
