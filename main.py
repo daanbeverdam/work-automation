@@ -51,7 +51,6 @@ class EasyLife():
             response = requests.get(url, auth=self.toggl_creds)
             return response.json()['data'].get('cid')
         elif name:
-            name = name.lower()
             if self.toggl_clients.get(name):
                 return self.toggl_clients[name]
             else:
@@ -107,7 +106,7 @@ class EasyLife():
         response = requests.get(url, auth=self.toggl_creds).json()
         clients = {}
         for result in response:
-            clients[result['name'].lower()] = result['id']
+            clients[result['name']] = result['id']
         return clients
 
     def get_toggle_client(self, _id):
