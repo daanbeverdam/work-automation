@@ -138,6 +138,9 @@ class EasyLife():
         d = {}
         for entry in time_entries:
             date = parser.parse(entry['start']).date()
+            if not entry.get('pid'):
+                self.log("Couldn't find associated project for entry: %s" % (str(entry)))
+                continue
             unique_id = str(entry['pid']) + str(date)
             if not entry.get('description'):
                 entry['description'] = ""
