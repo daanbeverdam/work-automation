@@ -1,128 +1,84 @@
-from zenpy import Zenpy
+from core import Core
+from zendesk import Zendesk
+from freshbooks import FreshBooks
+from toggl import Toggl
 import datetime
 from dateutil import tz, parser
 import requests
-from fuzzywuzzy import process, fuzz
 import json
 import traceback
-from xml.dom import minidom
 
 
-class EasyLife():
+class Automation(Core):
+    """Provides all automation and integration between the services."""
 
-    def __init__(self):
-        self.print_splash()
-        self.BOOKED_TAG = "\U0001F343"
-        config = json.load(open('config.json', 'r'))
-        self.zen_creds = {
-            'email' : config.get('zendesk_email'),
-            'token' : config.get('zendesk_token'),
-            'subdomain': config.get('zendesk_subdomain')
-            }
-        self.toggl_creds = (
-            config.get('toggl_token'), 'api_token'
-            )
-        self.fb_creds = {
-            'token': config.get('freshbooks_token'),
-            'subdomain': config.get('freshbooks_subdomain')
-            }
-        self.toggl_clients = self.get_toggl_clients()
-        self.fb_projects = []
-
-    def sync(self, no_of_days):
+    def sync(self, no_of_days=1):
+        """Turns Freshbooks tickets from the past x days into Toggl projects."""
+        zd = Zendesk()
+        tg = Toggl()
         try:
-            tickets = self.get_zd_tickets(no_of_days)
+            self.print("Syncing...")
+            tickets = zd.get_tickets(no_of_days)
             for ticket in tickets:
-                self.log("============================")
+                self.print_divider(30)
                 project_title = self.format_title(ticket.id, ticket.subject)
                 if ticket.organization:
-                    client_id = self.get_toggl_client_id(name=ticket.organization.name)
+                    client_id = tg.get_client_id(name=ticket.organization.name)
                 else:
-                    self.log("Ticket '%s' has no associated organization in Zendesk! Creating Toggl project anyway." % (project_title))
                     client_id = False
-                self.log("Creating project '%s'." % (project_title))
-                result = self.create_toggl_project(project_title, client_id)
-                print("Toggl response:")
-                self.log(result)
+                    self.print("Ticket '%s' has no associated organization!" % (project_title))
+                self.print("Creating project '%s'..." % (project_title))
+                result = tg.create_project(project_title, client_id)
+                self.print("Toggl response:")
+                self.log(result, silent=False)
+            self.print("Done!")
         except:
-            self.log(traceback.format_exc())
+            self.log(traceback.format_exc(), silent=False)
 
-    def get_toggl_client_id(self, name=None, project_id=None):
-        if project_id:
-            url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
-            response = requests.get(url, auth=self.toggl_creds)
-            return response.json()['data'].get('cid')
-        elif name:
-            if self.toggl_clients.get(name):
-                return self.toggl_clients[name]
+    def time_tracking(self):
+        """Starts interactive time tracking session. Updates Freshbooks based on Toggl entries."""
+        self.print_splash()  # prints some nice ASCII art before we begin
+        self.print("You can always enter 'skip' when you want to skip a time entry.", format='tip')
+        days = self.get_no_of_days_interactive()
+        original_entries = self.get_toggl_time_entries(days)
+        time_entries = self.merge_toggl_time_entries(original_entries)
+        self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
+        for entry in time_entries:
+            self.print_divider(30)
+            client_id = self.get_toggl_client_id(project_id=entry.get('pid'))
+            client_name = self.get_toggle_client(client_id)
+            project = self.get_toggl_project(entry.get('pid'))
+            duration = int(entry['duration']) / 60 / 60
+            duration = round(duration * 4 ) / 4  # convert to fb hours format
+            description = "%s %s" % (project['name'], '- ' + entry['description'] if entry.get('description') else '')
+            date = str(parser.parse(entry['start']).date())
+            self.print("Description: " + description)
+            self.print("Date: " + date)
+            self.print("Hours spent: " + str(duration))
+            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
+                self.print("Skipping this entry because it is already in Freshbooks.", 'cross')
+            elif entry['billable']:
+                client_name = self.fb_project_search(client_name)
+                if not client_name:
+                    self.print("Skipping this entry.", 'cross')
+                    continue
+                project_id = self.get_fb_project_id(client_name)
+                answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
+                if answer.lower() == "y" or answer == "":
+                    self.tag_toggl_projects(entry['merged_ids'], self.BOOKED_TAG)
+                    self.add_fb_entry(project_id, duration, description, date)
+                else:
+                    self.print("Did not add entry to Freshbooks.", 'cross')
             else:
-                # Fuzzy string matching ahead, beware!
-                choices = self.toggl_clients.keys()
-                best_match = self.fuzzy_match(name, choices)
-                self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
-                return self.toggl_clients[best_match]
+                self.print("Skipping this entry because it is not billable.", 'cross')
+        self.print_divider(30)
+        self.print("All done!")
 
-    def fuzzy_match(self, query, choices):
-        """Returns best approximate match in a list of strings."""
-        results = process.extract(query, choices)
-        if results[0][1] == results[1][1]:
-            # Use token set ratio on best results as a tie breaker
-            best_results = [r[0] for r in results[:15]]
-            results = process.extract(query, best_results, scorer=fuzz.token_set_ratio)
-        best_match = results[0][0]
-        return best_match
-
-    def format_title(self, _id, subject):
+    def format_title(self, ticket_id, subject):
+        """Formats id and subject into a suitable (Freshbooks) title."""
         # TODO: strip block tags?
-        title = "#%i %s" % (_id, subject)
+        title = "#%i %s" % (ticket_id, subject)
         return title
-
-    def get_zd_tickets(self, days=1):
-        """Returns array of ticket objects for past X days."""
-        client = Zenpy(**self.zen_creds)
-        yesterday = datetime.datetime.now() - datetime.timedelta(days=days)
-        tickets = []
-        for ticket in client.search(type="ticket", created_greater_than=(yesterday)):
-            tickets.append(ticket)
-        return tickets
-
-    def create_toggl_project(self, title, client_id=None):
-        """Creates project in Toggle."""
-        headers = {
-            'Content-Type': 'application/json',
-            }
-        data = {
-            "project": {
-                "name": title,
-                "cid": client_id if client_id else False
-                }
-            }
-        data = json.dumps(data)
-        url = 'https://www.toggl.com/api/v8/projects'
-        response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
-        return response.text
-
-    def get_toggl_clients(self):
-        """Returns Toggl clients."""
-        print("Loading Toggl clients...")
-        url = 'https://www.toggl.com/api/v8/clients'
-        response = requests.get(url, auth=self.toggl_creds).json()
-        clients = {}
-        for result in response:
-            clients[result['name']] = result['id']
-        return clients
-
-    def get_toggle_client(self, _id):
-        """Returns name of Toggl client, accepts Toggl client id."""
-        for name, client_id in self.toggl_clients.items():
-            if _id == client_id:
-                return name
-        return None
-
-    def get_toggl_project(self, project_id):
-        url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
-        response = requests.get(url, auth=self.toggl_creds)
-        return response.json()['data']
 
     def get_no_of_days_interactive(self):
         answer = input("Press return to get entries of past day or input number of days to go back in time: ")
@@ -163,196 +119,12 @@ class EasyLife():
                 d[unique_id] = entry
         return d.values()
 
-    def print(self, string, format=None):
-        HEADER = '\033[95m'
-        OKBLUE = '\033[94m'
-        OKGREEN = '\033[92m'
-        WARNING = '\033[93m'
-        FAIL = '\033[91m'
-        ENDC = '\033[0m'
-        BOLD = '\033[1m'
-        UNDERLINE = '\033[4m'
-        if format == 'tip':
-            string = WARNING + BOLD + 'Tip: ' + string
-        elif format == 'bold':
-            string = BOLD + string
-        elif format == 'cross':
-            string = FAIL + '\u2718 ' + string
-        elif format == 'ok':
-            string = OKGREEN + '\u2713 ' + string
-        print(string + ENDC)
-
-    def print_splash(self):
-        splash = r"""
-     ___T_     WorkAutomation!
-    | o o |   /
-    |__-__|
-    /| []|\
-  ()/|___|\()
-     |_|_|
-     /_|_\
-        """
-        print(splash)
-
-    def create_fb_time_entries(self):
-        self.fb_projects = self.get_fb_projects()
-        self.print("You can always enter 'skip' when you want to skip a time entry.", format='tip')
-        days = self.get_no_of_days_interactive()
-        original_entries = self.get_toggl_time_entries(days)
-        time_entries = self.merge_toggl_time_entries(original_entries)
-        self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
-        for entry in time_entries:
-            self.print_divider(30)
-            client_id = self.get_toggl_client_id(project_id=entry.get('pid'))
-            client_name = self.get_toggle_client(client_id)
-            project = self.get_toggl_project(entry.get('pid'))
-            duration = int(entry['duration']) / 60 / 60
-            duration = round(duration * 4 ) / 4  # convert to fb hours format
-            description = "%s %s" % (project['name'], '- ' + entry['description'] if entry.get('description') else '')
-            date = str(parser.parse(entry['start']).date())
-            self.print("Description: " + description)
-            self.print("Date: " + date)
-            self.print("Hours spent: " + str(duration))
-            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
-                self.print("Skipping this entry because it is already in Freshbooks.", 'cross')
-            elif entry['billable']:
-                client_name = self.fb_project_search(client_name)
-                if not client_name:
-                    self.print("Skipping this entry.", 'cross')
-                    continue
-                project_id = self.get_fb_project_id(client_name)
-                answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
-                if answer.lower() == "y" or answer == "":
-                    self.tag_toggl_projects(entry['merged_ids'], self.BOOKED_TAG)
-                    self.add_fb_entry(project_id, duration, description, date)
-                else:
-                    self.print("Did not add entry to Freshbooks.", 'cross')
-            else:
-                self.print("Skipping this entry because it is not billable.", 'cross')
-        self.print_divider(30)
-        self.print("All done!")
-
-    def print_divider(self, length):
-        print("=" * length)
-
-    def tag_toggl_projects(self, id_list, tag):
-        """Tags Toggl time entries. Accepts list of toggl time entry IDs and tag."""
-        headers = {
-            'Content-Type': 'application/json',
-            }
-        data = {
-            "time_entry": {
-                "tags": [tag]
-                }
-            }
-        data = json.dumps(data)
-        url = 'https://www.toggl.com/api/v8/time_entries/' + ','.join(str(i) for i in id_list)
-        response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
-        self.print('Tagged Toggl %s. ' % ('entry' if len(id_list) == 1 else 'entries') + self.BOOKED_TAG, 'ok')
-        return response.json()
-
-    def get_fb_project_id(self, name):
-        return self.fb_projects[name]
-
-    def fb_project_search(self, name):
-        if name == 'skip' or name == 'cancel':
-            return None
-        elif name:
-            choices = self.fb_projects.keys()
-            results = process.extract(name, choices, limit=10)
-            best_match = results[0][0]
-            if results[0][1] == results[1][1] or results[0][1] < 50:
-                print("Couldn't find a Freshbooks project that exactly matches '%s'. Best matches:" % (name))
-                i = 0
-                for result in results:
-                    i += 1
-                    print(" [%i] %s" % (i, result[0]))
-                answer = input("Choose one or specify a less ambiguous query: ")
-                self.clear_lines(2 + len(results))
-                if answer.isdigit() and int(answer) <= len(results):
-                    answer = results[int(answer) - 1][0]
-                return self.fb_project_search(answer)
-            print("Matched query to Freshbooks project '%s'." % (best_match))
-            answer = input("Is that correct? (Y/n) ")
-            self.clear_lines(2)
-            if answer.lower() == 'y' or answer == '':
-                print("Project: " + best_match)
-                return best_match
-            else:
-                return self.fb_project_search(None)
-        else:
-            answer = input("Search for a Freshbooks project: ")
-            self.clear_lines(1)
-            return self.fb_project_search(answer)
-
-    def clear_lines(self, no_of_lines):
-        CURSOR_UP_ONE = '\x1b[1A'
-        ERASE_LINE = '\x1b[2K'
-        print((CURSOR_UP_ONE + ERASE_LINE) * no_of_lines + CURSOR_UP_ONE)
-
-    def add_fb_entry(self, project_id, duration, description, date, task_id=2):
-        xml_request = """
-        <?xml version="1.0" encoding="utf-8"?>
-        <request method="time_entry.create">
-          <time_entry>
-            <project_id>%s</project_id>
-            <task_id>%s</task_id>
-            <hours>%s</hours>
-            <notes>%s</notes>
-            <date>%s</date>
-          </time_entry>
-        </request>
-        """ % (str(project_id), str(task_id), str(duration), description, date)
-        url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
-        response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
-        self.print("Entry added to Freshbooks.", 'ok')
-        self.log(response.text, silent=True)
-
-    def get_fb_projects(self):
-        # Can you tell I hate XML?
-        print("Loading Freshbooks projects from their shitty XML API...")
-        result = {}
-        projects = ['project']
-        i = 1
-        while len(projects) != 0:
-            xml_request = """
-            <?xml version="1.0" encoding="utf-8"?>
-            <request method="project.list">
-              <page>%i</page>
-              <per_page>100</per_page>
-            </request>
-            """ % (i)
-            i += 1
-            url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
-            response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
-            xmldoc = minidom.parseString(response.text)
-            projects = xmldoc.getElementsByTagName('project')
-            if len(projects):
-                for project in projects:
-                    name = project.getElementsByTagName("name")[0].firstChild.nodeValue
-                    project_id = project.getElementsByTagName("project_id")[0].firstChild.nodeValue
-                    result[name] = project_id
-        return result
-
-    def get_toggl_time_entries(self, days=1):
-        start = self.get_timestamp(days)
-        params = {'start_date': start}
-        response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=self.toggl_creds)
-        time_entries = response.json()
-        return time_entries
-
     def get_timestamp(self, days=1):
-        """Returns isoformat string of beginning of past x day(s)."""
+        """Returns isoformat string of beginning of past x day(s).
+        Assumes Europe/Amsterdam locale."""
         offset = datetime.datetime.utcnow().date() - datetime.timedelta(days=days-1)
         # est = tz.gettz('Europe/Amsterdam')
         # temporary dirty fix for timezone:
         timezone = '+02:00'
         start = datetime.datetime(offset.year, offset.month, offset.day)
         return start.isoformat() + timezone
-
-    def log(self, entry, silent=False):
-        entry = entry.strip()
-        if not silent:
-            print(entry)
-        with open('system.log', 'a') as log:
-            log.write(str(datetime.datetime.now()) + ' ' + entry + '\n')

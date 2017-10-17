@@ -1,5 +1,5 @@
 # Create Toggl projects based on Zendesk tickets
-from main import EasyLife
+from main import Automation
 import sys
 
 if __name__ == '__main__':
@@ -7,5 +7,5 @@ if __name__ == '__main__':
         days = int(sys.argv[1])
     except:
         days = 1
-    el = EasyLife()
-    el.sync(days)
+    auto = Automation()
+    auto.sync(days)
