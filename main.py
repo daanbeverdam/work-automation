@@ -71,12 +71,14 @@ class Automation(Core):
             elif entry['billable']:
                 # Get FreshBooks project name through interactive search:
                 try:
+                    self.print("Project: \U0001F50D ")
                     fb_project_name = self.interactive_search(fb_projects.keys(), client_name)
+                    self.clear_lines(1)
                     self.print("Project: " + fb_project_name)
                 # Handle KeyboardInterrupt
                 except KeyboardInterrupt:
-                    answer = input("\nKeyboardInterrupt! Did you mean to skip the current entry? (Y/n) ")
-                    if answer.lower() == 'y' or answer == '':
+                    answer = input("\nKeyboardInterrupt! Skip current entry or quit time tracking? (S/q) ")
+                    if answer.lower() == 's' or answer == '':
                         self.clear_lines(1)
                         self.print("Skipping this entry.", 'cross')
                         continue
