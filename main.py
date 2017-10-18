@@ -7,6 +7,7 @@ from dateutil import tz, parser
 import requests
 import json
 import traceback
+from fuzzywuzzy import process, fuzz
 
 
 class Automation(Core):
@@ -31,56 +32,119 @@ class Automation(Core):
                 result = tg.create_project(project_title, client_id)
                 self.print("Toggl response:")
                 self.log(result, silent=False)
+            self.print_divider(30)
             self.print("Done!")
         except:
             self.log(traceback.format_exc(), silent=False)
 
     def time_tracking(self):
         """Starts interactive time tracking session. Updates Freshbooks based on Toggl entries."""
-        self.print_splash()  # prints some nice ASCII art before we begin
+        fb = FreshBooks()
+        tg = Toggl()
+        self.print_splash()
         self.print("You can always enter 'skip' when you want to skip a time entry.", format='tip')
-        days = self.get_no_of_days_interactive()
-        original_entries = self.get_toggl_time_entries(days)
-        time_entries = self.merge_toggl_time_entries(original_entries)
+        days = self.get_interactive_days()  # number of days to go back
+        timestamp = self.get_timestamp(days)  # unix timestamp including tz
+        time_entries = tg.get_time_entries(timestamp)
+        time_entries = self.merge_toggl_time_entries(time_entries)  # merge Toggl entries
+        fb_projects = fb.get_projects()
         self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
+        # Loop through merged Toggl time entries:
         for entry in time_entries:
-            self.print_divider(30)
-            client_id = self.get_toggl_client_id(project_id=entry.get('pid'))
-            client_name = self.get_toggle_client(client_id)
-            project = self.get_toggl_project(entry.get('pid'))
-            duration = int(entry['duration']) / 60 / 60
-            duration = round(duration * 4 ) / 4  # convert to fb hours format
-            description = "%s %s" % (project['name'], '- ' + entry['description'] if entry.get('description') else '')
+            # Get and convert all necessary info:
+            client_id = tg.get_client_id(project_id=entry.get('pid'))
+            client_name = tg.get_client_name(client_id)
+            project = tg.get_project(entry.get('pid'))
+            duration = int(entry['duration']) / 60 / 60  # convert duration to hours
+            duration = round(duration * 4 ) / 4  # round hours to nearest .25
+            description = self.format_description(project['name'], entry['description'])
             date = str(parser.parse(entry['start']).date())
+            # Print info in a nice way:
+            self.print_divider(30)
             self.print("Description: " + description)
             self.print("Date: " + date)
             self.print("Hours spent: " + str(duration))
-            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
+            # Skip if Toggl entry is already booked:
+            if entry.get('tags') and tg.BOOKED_TAG in entry['tags']:
                 self.print("Skipping this entry because it is already in Freshbooks.", 'cross')
+            # If billable, add to Freshbooks:
             elif entry['billable']:
-                client_name = self.fb_project_search(client_name)
-                if not client_name:
+                # Get FreshBooks project name through interactive search:
+                try:
+                    fb_project_name = self.interactive_search(fb_projects.keys(), client_name)
+                    self.print("Project: " + fb_project_name)
+                # Handle KeyboardInterrupt
+                except KeyboardInterrupt:
+                    answer = input("\nKeyboardInterrupt! Did you mean to skip the current entry? (Y/n) ")
+                    if answer.lower() == 'y' or answer == '':
+                        self.clear_lines(1)
+                        self.print("Skipping this entry.", 'cross')
+                        continue
+                    else:
+                        self.clear_lines(1)
+                        self.print("Ok, stopping time tracking.", 'cross')
+                        break
+                # If user requests so, skip this entry:
+                if not fb_project_name:
                     self.print("Skipping this entry.", 'cross')
                     continue
-                project_id = self.get_fb_project_id(client_name)
-                answer = input("Do you want to enter above information in Freshbooks? (Y/n) ")
-                if answer.lower() == "y" or answer == "":
-                    self.tag_toggl_projects(entry['merged_ids'], self.BOOKED_TAG)
-                    self.add_fb_entry(project_id, duration, description, date)
-                else:
-                    self.print("Did not add entry to Freshbooks.", 'cross')
+                # Otherwise, add entry to FreshBooks and tag Toggl entry/entries:
+                project_id = fb.get_project_id(fb_project_name)
+                # tg.tag_projects(entry['merged_ids'], tg.BOOKED_TAG)
+                # fb.add_entry(project_id, duration, description, date)
+            # If not billable, skip entry:
             else:
                 self.print("Skipping this entry because it is not billable.", 'cross')
         self.print_divider(30)
         self.print("All done!")
 
-    def format_title(self, ticket_id, subject):
-        """Formats id and subject into a suitable (Freshbooks) title."""
-        # TODO: strip block tags?
-        title = "#%i %s" % (ticket_id, subject)
-        return title
+    def interactive_search(self, choices, query=None):
+        """Starts interactive search, allows user to make a selection.
+        Accepts array of strings and optional (user) query. Returns string chosen by user."""
+        if query:
+            match = self.get_interactive_match(choices, query)
+            if match:
+                self.print("Matched query to '%s'." % (match))
+                answer = input("Is that correct? (Y/n) ")
+                self.clear_lines(1)
+                if answer.lower() == 'y' or answer == '':
+                    self.clear_lines(1)
+                    return match
+                elif answer.lower() in ['skip', 'cancel', 'break']:
+                    return None
+                else:
+                    self.clear_lines(1)
+                    return self.interactive_search(choices)
+            else:
+                return self.interactive_search(choices)
+        else:
+            query = input("Please type a query: ")
+            self.clear_lines(1)
+            return self.interactive_search(choices, query)
 
-    def get_no_of_days_interactive(self):
+    def get_interactive_match(self, choices, query):
+        """Returns string that best matches query out of a list of choices.
+        Prompts user if unsure about best match."""
+        results = process.extract(query, choices, limit=10)  # fuzzy string matching
+        best_match = results[0]
+        second_best_match = results[1]
+        if best_match[1] == second_best_match[1] or best_match[1] < 50:  # if inconclusive or low score
+            self.print("Couldn't find a conclusive match for '%s'. Best matches:" % (query))
+            i = 0
+            for result in results:
+                i += 1
+                print(" [%i] %s" % (i, result[0]))
+            answer = input("Choose one or specify a less ambiguous query: ")
+            self.clear_lines(2 + len(results))
+            if answer.isdigit() and int(answer) <= len(results):
+                return results[int(answer) - 1][0]
+            else:
+                return self.get_interactive_match(choices, answer)
+        else:
+            return best_match[0]
+
+    def get_interactive_days(self):
+        """Asks an user how many days to go back. Returns int."""
         answer = input("Press return to get entries of past day or input number of days to go back in time: ")
         if answer == '':
             days = 1
@@ -92,10 +156,22 @@ class Automation(Core):
                 days = 1
         return days
 
+    def format_title(self, ticket_id, subject):
+        """Formats id and subject into a suitable (Freshbooks) title."""
+        # TODO: strip block tags?
+        title = "#%i %s" % (ticket_id, subject)
+        return title
+
+    def format_description(self, project_name, description):
+        """Formats Toggl project name and description into (Freshbooks) description."""
+        description = description if description else ''
+        return "%s %s" % (project_name, '- ' + description)
+
     def merge_toggl_time_entries(self, time_entries):
+        tg = Toggl()
         d = {}
         for entry in time_entries:
-            if entry.get('tags') and self.BOOKED_TAG in entry['tags']:
+            if entry.get('tags') and tg.BOOKED_TAG in entry['tags']:
                 status = 'booked'
             else:
                 status = 'not-booked'

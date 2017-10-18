@@ -95,6 +95,7 @@ class Toggl(Core):
     def get_time_entries(self, timestamp):
         """Returns all Toggl time entries from specified starting point as json array.
         Timestamp should be in isoformat including timezone info."""
+        self.print("Loading Toggl time entries...")
         params = {'start_date': timestamp}
         response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=self.toggl_creds)
         time_entries = response.json()

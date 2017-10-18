@@ -1,6 +1,6 @@
 # Start timetracking in Freshbooks based on your Toggl entries
-from main import EasyLife
+from main import Automation
 
 if __name__ == '__main__':
-    el = EasyLife()
-    el.create_fb_time_entries()
+    auto = Automation()
+    auto.time_tracking()

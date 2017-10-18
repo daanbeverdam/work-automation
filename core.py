@@ -28,7 +28,7 @@ class Core():
 
     def log(self, entry, silent=True):
         """Logs entries to system.log, also prints if not silent."""
-        entry = entry.strip()
+        entry = str(entry).strip()
         if not silent:
             print(entry)
         with open('system.log', 'a') as log:
