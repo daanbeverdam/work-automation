@@ -13,6 +13,10 @@ from fuzzywuzzy import process, fuzz
 class Automation(Core):
     """Provides all automation and integration between the services."""
 
+    def __init__(self):
+        super(Automation, self).__init__()
+        self.SKIP_KEYWORDS = ['skip', 'cancel', 'break']
+
     def sync(self, no_of_days=1):
         """Turns Freshbooks tickets from the past x days into Toggl projects."""
         zd = Zendesk()
@@ -73,8 +77,6 @@ class Automation(Core):
                 try:
                     self.print("Project: \U0001F50D ")
                     fb_project_name = self.interactive_search(fb_projects.keys(), client_name)
-                    self.clear_lines(1)
-                    self.print("Project: " + fb_project_name)
                 # Handle KeyboardInterrupt
                 except KeyboardInterrupt:
                     answer = input("\nKeyboardInterrupt! Skip current entry or quit time tracking? (S/q) ")
@@ -87,10 +89,12 @@ class Automation(Core):
                         self.print("Ok, stopping time tracking.", 'cross')
                         break
                 # If user requests so, skip this entry:
+                self.clear_lines(1)
                 if not fb_project_name:
                     self.print("Skipping this entry.", 'cross')
                     continue
                 # Otherwise, add entry to FreshBooks and tag Toggl entry/entries:
+                self.print("Project: " + fb_project_name)
                 project_id = fb.get_project_id(fb_project_name)
                 tg.tag_projects(entry['merged_ids'], tg.BOOKED_TAG)
                 fb.add_entry(project_id, duration, description, date)
@@ -112,13 +116,11 @@ class Automation(Core):
                 if answer.lower() == 'y' or answer == '':
                     self.clear_lines(1)
                     return match
-                elif answer.lower() in ['skip', 'cancel', 'break']:
-                    return None
                 else:
                     self.clear_lines(1)
                     return self.interactive_search(choices)
             else:
-                return self.interactive_search(choices)
+                return None
         else:
             query = input("Please type a query: ")
             self.clear_lines(1)
@@ -127,6 +129,8 @@ class Automation(Core):
     def get_interactive_match(self, choices, query):
         """Returns string that best matches query out of a list of choices.
         Prompts user if unsure about best match."""
+        if query in self.SKIP_KEYWORDS:
+            return None
         results = process.extract(query, choices, limit=10)  # fuzzy string matching
         best_match = results[0]
         second_best_match = results[1]
