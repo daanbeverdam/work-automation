@@ -44,8 +44,8 @@ class Core():
         ENDC = '\033[0m'
         BOLD = '\033[1m'
         UNDERLINE = '\033[4m'
-        if format == 'tip':
-            string = WARNING + BOLD + 'Tip: ' + string
+        if format == 'warn':
+            string = WARNING + BOLD + string
         elif format == 'bold':
             string = BOLD + string
         elif format == 'cross':

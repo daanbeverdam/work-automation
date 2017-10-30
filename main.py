@@ -7,6 +7,7 @@ from dateutil import tz, parser
 import requests
 import json
 import traceback
+import webbrowser
 from fuzzywuzzy import process, fuzz
 
 
@@ -46,13 +47,16 @@ class Automation(Core):
         fb = FreshBooks()
         tg = Toggl()
         self.print_splash()
-        self.print("You can always enter 'skip' when you want to skip a time entry.", format='tip')
+        self.print("Tip: You can always enter 'skip' when you want to skip a time entry.", format='warn')
         days = self.get_interactive_days()  # number of days to go back
+        self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
         timestamp = self.get_timestamp(days)  # unix timestamp including tz
         time_entries = tg.get_time_entries(timestamp)
+        if len(time_entries) == 0:
+            self.print("No Toggl entries in this time span!", 'warn')
+            return False
         time_entries = self.merge_toggl_time_entries(time_entries)  # merge Toggl entries
         fb_projects = fb.get_projects()
-        self.print("OK, I'll run you through the Toggl time entries of the past %i day(s)." % (days))
         # Loop through merged Toggl time entries:
         for entry in time_entries:
             # Get and convert all necessary info:
@@ -102,7 +106,9 @@ class Automation(Core):
             else:
                 self.print("Skipping this entry because it is not billable.", 'cross')
         self.print_divider(30)
-        self.print("All done!")
+        answer = input("All done! Open FreshBooks in browser to verify? (Y/n) ")
+        if answer.lower() == 'y' or answer == '':
+            webbrowser.open('https://%s.freshbooks.com/timesheet' % fb.fb_creds['subdomain'])
 
     def interactive_search(self, choices, query=None):
         """Starts interactive search, allows user to make a selection.
