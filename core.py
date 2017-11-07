@@ -1,6 +1,7 @@
 import json
 import datetime
 from fuzzywuzzy import process, fuzz
+import unicodedata
 
 
 class Core():
@@ -85,3 +86,8 @@ class Core():
             results = process.extract(query, best_results, scorer=fuzz.token_set_ratio)
         best_match = results[0][0]
         return best_match
+
+    def normalize_string(self, string):
+        """Normalizes special characters in string because the FreshBooks API never heard of utf-8."""
+        string = unicodedata.normalize('NFKD', string)
+        return string.encode('ASCII', 'ignore').decode('utf-8')

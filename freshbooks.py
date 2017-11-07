@@ -13,6 +13,7 @@ class FreshBooks(Core):
 
     def add_entry(self, project_id, duration, description, date, task_id=2):
         """Adds timetracking entry to Freshbooks. Returns API response."""
+        description = self.normalize_string(description)
         xml_request = """
         <?xml version="1.0" encoding="utf-8"?>
         <request method="time_entry.create">
