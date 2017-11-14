@@ -36,10 +36,15 @@ class Automation(Core):
                 else:
                     client_id = False
                     self.print("Ticket '%s' has no associated organization!" % (project_title))
-                self.print("Creating project '%s'..." % (project_title))
-                result = tg.create_project(project_title, client_id, is_private=False)
-                self.print("Toggl response:")
-                self.log(result, silent=False)
+                if not self.already_created(ticket.id):
+                    self.print("Creating project '%s'..." % (project_title))
+                    result = tg.create_project(project_title, client_id, is_private=False)
+                    self.print("Toggl response:")
+                    self.log(result, silent=False)
+                else:
+                    pass
+                    # TODO: edit Toggl project
+                    # tg.edit_project(project_id, name=ticket.subject)
             self.print_divider(30)
             self.print("Done!")
         except:
@@ -170,6 +175,14 @@ class Automation(Core):
                 print("You didn't enter a number, assuming 1 day.")
                 days = 1
         return days
+
+    def already_created(self, ticked_id):
+        """Hacky way to check if this function already made a Toggl project based on a Zendesk ticket ID."""
+        all_projects = tg.get_projects()
+        project_prepends = [p['name'].split()[0][1:] for p in all_projects]
+        if str(ticket.id) in project_prepends:
+            return True
+        return False
 
     def format_title(self, ticket_id, subject):
         """Formats id and subject into a suitable (Freshbooks) title."""

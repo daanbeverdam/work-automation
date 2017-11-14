@@ -10,6 +10,7 @@ class Toggl(Core):
         super(Toggl, self).__init__()
         self.BOOKED_TAG = "\U0001F343"  # tag used for flagging Toggl projects
         self.clients = None  # will contain loaded Toggl clients
+        self.projects = None  # will contain loaded Toggl projects
 
     def get_clients(self):
         """Returns dictionary of all Toggl clients with key/value name/id."""
@@ -124,6 +125,17 @@ class Toggl(Core):
         response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
         self.print('Tagged Toggl %s. ' % ('entry' if len(id_list) == 1 else 'entries') + self.BOOKED_TAG, 'ok')
         return response.json()
+
+    def get_projects(self):
+        """Retrieves and returns all projects visible to current user as array of JSON objects."""
+        if self.projects:
+            return self.projects
+        params = {'with_related_data': 'true'}
+        url = 'https://www.toggl.com/api/v8/me'
+        response = requests.get(url, params=params, auth=self.toggl_creds)
+        projects = response.json()['data']['projects']
+        self.projects = projects  # save for later
+        return projects
 
     def get_time_entries(self, timestamp):
         """Returns all Toggl time entries from specified starting point as json array.
