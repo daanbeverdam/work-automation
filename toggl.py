@@ -86,7 +86,7 @@ class Toggl(Core):
         response = requests.get(url, auth=self.toggl_creds)
         return response.json()['data']
 
-    def create_project(self, title, client_id=None):
+    def create_project(self, title, client_id=None, is_private=True):
         """Creates Toggl project with specified title and (optional) client id.
             Returns API response in json (if possible)."""
         headers = {
@@ -95,7 +95,8 @@ class Toggl(Core):
         data = {
             "project": {
                 "name": title,
-                "cid": client_id if client_id else False
+                "cid": client_id if client_id else False,
+                "is_private": is_private
                 }
             }
         data = json.dumps(data)

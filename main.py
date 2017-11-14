@@ -37,7 +37,7 @@ class Automation(Core):
                     client_id = False
                     self.print("Ticket '%s' has no associated organization!" % (project_title))
                 self.print("Creating project '%s'..." % (project_title))
-                result = tg.create_project(project_title, client_id)
+                result = tg.create_project(project_title, client_id, is_private=False)
                 self.print("Toggl response:")
                 self.log(result, silent=False)
             self.print_divider(30)
