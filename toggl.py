@@ -130,6 +130,7 @@ class Toggl(Core):
         """Retrieves and returns all projects visible to current user as array of JSON objects."""
         if self.projects:
             return self.projects
+        self.print("Loading Toggl projects...")
         params = {'with_related_data': 'true'}
         url = 'https://www.toggl.com/api/v8/me'
         response = requests.get(url, params=params, auth=self.toggl_creds)

@@ -24,9 +24,9 @@ class Automation(Core):
         tg = Toggl()
         try:
             self.print("Syncing...")
+            self.print_divider(30)
             tickets = zd.get_tickets(no_of_days)
             for ticket in tickets:
-                self.print_divider(30)
                 project_title = self.format_title(ticket.id, ticket.subject)
                 if ticket.organization:
                     client_id = tg.get_client_id(name=ticket.organization.name)
@@ -36,16 +36,18 @@ class Automation(Core):
                 else:
                     client_id = False
                     self.print("Ticket '%s' has no associated organization!" % (project_title))
-                if not self.already_created(ticket.id):
+                all_projects = tg.get_projects()
+                if not self.already_created(ticket.id, all_projects):
                     self.print("Creating project '%s'..." % (project_title))
                     result = tg.create_project(project_title, client_id, is_private=False)
                     self.print("Toggl response:")
                     self.log(result, silent=False)
                 else:
+                    self.print("There is already a Toggl project for Zendesk ticket #%s!" % ticket.id)
                     pass
                     # TODO: edit Toggl project
                     # tg.edit_project(project_id, name=ticket.subject)
-            self.print_divider(30)
+                self.print_divider(30)
             self.print("Done!")
         except:
             self.log(traceback.format_exc(), silent=False)
@@ -176,11 +178,10 @@ class Automation(Core):
                 days = 1
         return days
 
-    def already_created(self, ticked_id):
+    def already_created(self, ticket_id, toggl_projects):
         """Hacky way to check if this function already made a Toggl project based on a Zendesk ticket ID."""
-        all_projects = tg.get_projects()
-        project_prepends = [p['name'].split()[0][1:] for p in all_projects]
-        if str(ticket.id) in project_prepends:
+        project_prepends = [p['name'].split()[0][1:] for p in toggl_projects]
+        if str(ticket_id) in project_prepends:
             return True
         return False
 
@@ -188,7 +189,7 @@ class Automation(Core):
         """Formats id and subject into a suitable (Freshbooks) title."""
         # TODO: strip block tags?
         title = "#%i %s" % (ticket_id, subject)
-        return title
+        return title.strip()
 
     def format_description(self, project_name, description):
         """Formats Toggl project name and description into (Freshbooks) description."""
