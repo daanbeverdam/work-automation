@@ -16,17 +16,22 @@ class Toggl(Core):
         if self.clients:
             return self.clients
         else:
-            self.print("Loading Toggl clients...")
-            url = 'https://www.toggl.com/api/v8/clients'
-            response = requests.get(url, auth=self.toggl_creds).json()
-            clients = {}
-            for result in response:
-                clients[result['name']] = result['id']
-            self.clients = clients  # store for later use
-            return clients
+            return self.load_clients()
+
+    def load_clients(self):
+        """Loads Toggl clients from their API and saves them to object."""
+        self.print("Loading Toggl clients...")
+        url = 'https://www.toggl.com/api/v8/clients'
+        response = requests.get(url, auth=self.toggl_creds).json()
+        clients = {}
+        for result in response:
+            clients[result['name']] = result['id']
+        self.clients = clients  # store for later use
+        return clients
 
     def get_client_id(self, name=None, project_id=None):
-        """Returns client id based on either name or project id."""
+        """Returns client id based on either name or project id.
+           Uses fuzzy matching for matching names."""
         if project_id:
             url = 'https://www.toggl.com/api/v8/projects/' + str(project_id)
             response = requests.get(url, auth=self.toggl_creds)
@@ -37,9 +42,14 @@ class Toggl(Core):
             else:
                 # Fuzzy string matching ahead, beware!
                 choices = self.get_clients().keys()
-                best_match = self.fuzzy_match(name, choices)
-                self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
-                return self.get_clients()[best_match]
+                best_match = self.fuzzy_match(name, choices, cutoff=90)
+                print(best_match)
+                if best_match:
+                    self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
+                    return self.get_clients()[best_match]
+                else:
+                    self.log("Couldn't accurately find a client with that name.")
+                    return None
 
     def get_client_name(self, client_id):
         """Returns name of Toggl client, accepts Toggl client id."""
@@ -47,6 +57,29 @@ class Toggl(Core):
             if client_id == _id:
                 return name
         return None
+
+    def create_client(self, name, workspace_id=None):
+        """Creates a new Toggl client. Returns Toggl's JSON response.
+           If no workspace id is specified, the id for the first workspace will be assumed."""
+        if not workspace_id:
+            workspaces = self.get_workspaces()
+            workspace_id = workspaces[0]['id']
+            self.print("No workspace ID specified, assuming workspace id %s" % str(workspace_id), 'warn')
+        headers = {
+            'Content-Type': 'application/json',
+            }
+        data = {
+            "client": {
+                "name": name,
+                "wid": workspace_id
+                }
+            }
+        data = json.dumps(data)
+        url = 'https://www.toggl.com/api/v8/clients'
+        response = requests.post(url, headers=headers, data=data, auth=self.toggl_creds)
+        client = response.json()['data']
+        self.load_clients()
+        return client
 
     def get_project(self, project_id):
         """Returns Toggl project in json format. Accepts project id."""
@@ -100,3 +133,10 @@ class Toggl(Core):
         response = requests.get('https://www.toggl.com/api/v8/time_entries', params=params, auth=self.toggl_creds)
         time_entries = response.json()
         return time_entries
+
+    def get_workspaces(self):
+        """Fetches all Toggl workspaces. Returns list of (json) workspaces."""
+        url = 'https://www.toggl.com/api/v8/workspaces'
+        response = requests.get(url, auth=self.toggl_creds)
+        workspaces = response.json()
+        return workspaces

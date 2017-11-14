@@ -30,6 +30,9 @@ class Automation(Core):
                 project_title = self.format_title(ticket.id, ticket.subject)
                 if ticket.organization:
                     client_id = tg.get_client_id(name=ticket.organization.name)
+                    if not client_id:
+                        new_client = tg.create_client(ticket.organization.name)
+                        client_id = new_client['id']
                 else:
                     client_id = False
                     self.print("Ticket '%s' has no associated organization!" % (project_title))

@@ -77,9 +77,15 @@ class Core():
         """
         print(splash)
 
-    def fuzzy_match(self, query, choices):
-        """Returns best approximate match in a list of strings by fuzzy matching."""
+    def fuzzy_match(self, query, choices, cutoff=0):
+        """Returns best approximate match in a list of strings by fuzzy matching.
+           Set cutoff score to specify accuracy (value between 0-100).
+           Returns None if results are too inaccurate."""
         results = process.extract(query, choices)
+        print('score', results[0][1])
+        print('cutoff', cutoff)
+        if results[0][1] < cutoff:
+            return None
         if results[0][1] == results[1][1]:
             # Use token set ratio on best results as a tie breaker
             best_results = [r[0] for r in results[:15]]
