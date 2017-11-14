@@ -43,7 +43,6 @@ class Toggl(Core):
                 # Fuzzy string matching ahead, beware!
                 choices = self.get_clients().keys()
                 best_match = self.fuzzy_match(name, choices, cutoff=90)
-                print(best_match)
                 if best_match:
                     self.log("Fuzzy matched '%s' to Toggl project '%s'." % (name, best_match))
                     return self.get_clients()[best_match]

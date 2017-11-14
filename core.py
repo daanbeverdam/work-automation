@@ -82,8 +82,6 @@ class Core():
            Set cutoff score to specify accuracy (value between 0-100).
            Returns None if results are too inaccurate."""
         results = process.extract(query, choices)
-        print('score', results[0][1])
-        print('cutoff', cutoff)
         if results[0][1] < cutoff:
             return None
         if results[0][1] == results[1][1]:
