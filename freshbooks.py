@@ -21,7 +21,7 @@ class FreshBooks(Core):
             <project_id>%s</project_id>
             <task_id>%s</task_id>
             <hours>%s</hours>
-            <notes>%s</notes>
+            <notes><![CDATA[%s]]></notes>
             <date>%s</date>
           </time_entry>
         </request>
