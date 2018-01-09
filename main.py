@@ -85,6 +85,9 @@ class Automation(Core):
             # Skip if Toggl entry is already booked:
             if entry.get('tags') and tg.BOOKED_TAG in entry['tags']:
                 self.print("Skipping this entry because it is already in Freshbooks.", 'cross')
+            # Skip if duration is below 0.25:
+            elif duration < 0.25:
+                self.print("Skipping this entry because there are less than 0.25 hours spent.", 'cross')
             # If billable, add to Freshbooks:
             elif entry['billable']:
                 # Get FreshBooks project name through interactive search:
