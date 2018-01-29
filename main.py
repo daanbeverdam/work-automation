@@ -6,6 +6,7 @@ import datetime
 from dateutil import tz, parser
 import requests
 import json
+import sys
 import traceback
 import webbrowser
 from fuzzywuzzy import process, fuzz
@@ -104,7 +105,7 @@ class Automation(Core):
                     else:
                         self.clear_lines(1)
                         self.print("Ok, stopping time tracking.", 'cross')
-                        break
+                        sys.exit()
                 # If user requests so, skip this entry:
                 self.clear_lines(1)
                 if not fb_project_name:
@@ -200,31 +201,33 @@ class Automation(Core):
         return "%s %s" % (project_name, '- ' + description)
 
     def merge_toggl_time_entries(self, time_entries):
+        """Merges toggle time entries with same project name. Sums duration if billable."""
         tg = Toggl()
         d = {}
         for entry in time_entries:
-            if entry.get('tags') and tg.BOOKED_TAG in entry['tags']:
-                status = 'booked'
-            else:
-                status = 'not-booked'
-            date = parser.parse(entry['start']).date()
-            if not entry.get('pid'):
-                self.log("Couldn't find associated project for entry: %s" % (str(entry)))
-                continue
-            unique_id = str(entry['pid']) + str(date) + status
-            if not entry.get('description'):
-                entry['description'] = ""
-            if d.get(unique_id):
-                d[unique_id]['duration'] += entry['duration']
-                d[unique_id]['merged_ids'].append(entry['id'])
-                if d[unique_id].get('description'):
-                    if entry['description'].strip() not in d[unique_id]['description']:
-                        d[unique_id]['description'] += ' / ' + entry['description']
+            if entry.get('billable'):
+                if entry.get('tags') and tg.BOOKED_TAG in entry['tags']:
+                    status = 'booked'
                 else:
-                    d[unique_id]['description'] = entry['description']
-            else:
-                entry['merged_ids'] = [entry['id']]
-                d[unique_id] = entry
+                    status = 'not-booked'
+                date = parser.parse(entry['start']).date()
+                if not entry.get('pid'):
+                    self.log("Couldn't find associated project for entry: %s" % (str(entry)))
+                    continue
+                unique_id = str(entry['pid']) + str(date) + status
+                if not entry.get('description'):
+                    entry['description'] = ""
+                if d.get(unique_id):
+                    d[unique_id]['duration'] += entry['duration']
+                    d[unique_id]['merged_ids'].append(entry['id'])
+                    if d[unique_id].get('description'):
+                        if entry['description'].strip() not in d[unique_id]['description']:
+                            d[unique_id]['description'] += ' / ' + entry['description']
+                    else:
+                        d[unique_id]['description'] = entry['description']
+                else:
+                    entry['merged_ids'] = [entry['id']]
+                    d[unique_id] = entry
         return d.values()
 
     def get_timestamp(self, days=1):
