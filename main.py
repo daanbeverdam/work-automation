@@ -114,8 +114,8 @@ class Automation(Core):
                 # Otherwise, add entry to FreshBooks and tag Toggl entry/entries:
                 self.print("Project: " + fb_project_name)
                 project_id = fb.get_project_id(fb_project_name)
-                tg.tag_projects(entry['merged_ids'], tg.BOOKED_TAG)
                 fb.add_entry(project_id, duration, description, date)
+                tg.tag_projects(entry['merged_ids'], tg.BOOKED_TAG)
             # If not billable, skip entry:
             else:
                 self.print("Skipping this entry because it is not billable.", 'cross')
