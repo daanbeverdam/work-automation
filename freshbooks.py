@@ -28,8 +28,17 @@ class FreshBooks(Core):
         """ % (str(project_id), str(task_id), str(duration), description, date)
         url = 'https://' + self.fb_creds['subdomain'] + '.freshbooks.com/api/2.1/xml-in'
         response = requests.post(url, data=xml_request, auth=(self.fb_creds['token'], 'X'))
-        self.print("Entry added to Freshbooks.", 'ok')
-        self.log(response.text, silent=True)
+        xml = minidom.parseString(response.text)
+        elements = xml.getElementsByTagName('response')
+        status = elements[0].attributes['status'].value
+        if status == 'ok':
+            self.print("Entry added to Freshbooks.", 'ok')
+            self.log(response.text, silent=True)
+        else:
+            self.print("Whoops something went wrong on Freshbooks end!", 'cross')
+            self.log(response.text, silent=False)
+            raise ValueError("Unexpected response from Freshbooks!"
+                             "Incident has been logged.")
         return response.text
 
     def get_project_id(self, name):
